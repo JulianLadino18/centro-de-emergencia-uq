@@ -1,0 +1,2 @@
+N|N_1794527726261000_824011|agua|100|crítica|Z1|Sector 3|R002|asignada|30
+N|N_1794527726238000_127487|agua|30|crítica|Z1|Punto de atención sector 3|R001|atendida|30
