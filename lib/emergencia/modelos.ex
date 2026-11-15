@@ -1,5 +1,9 @@
 defmodule Emergencia.Modelos.Catalogos do
-  @moduledoc "Catálogos y guardas para roles y niveles de afectación."
+  @moduledoc "Catálogos y guardas para roles y niveles de afectación.
+  -version 1.0
+  -autor: Samuel Franco Salazar
+  -fecha: 2026-11-14
+  "
 
   @roles [:ciudadano, :voluntario, :coordinador, :administrador]
   @niveles [:critico, :alto, :medio, :bajo]

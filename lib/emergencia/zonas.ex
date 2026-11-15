@@ -1,5 +1,9 @@
 defmodule Emergencia.Zonas do
-  @moduledoc "Módulo funcional para manejar la jerarquía de Zona -> Sector -> Punto de atención."
+  @moduledoc "Módulo funcional para manejar la jerarquía de Zona -> Sector -> Punto de atención.
+  -version 1.0
+  -autor: Samuel Franco Salazar
+  -fecha: 2026-11-14
+  "
 
   alias Emergencia.Modelos.{Catalogos, PuntoAtencion, Sector, Zona}
 
