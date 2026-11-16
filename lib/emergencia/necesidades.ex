@@ -467,7 +467,7 @@ defmodule Emergencia.Necesidades do
     |> String.trim()
     |> String.downcase()
     |> :unicode.characters_to_nfd_binary()
-    |> String.replace(~r/\p{Mn}/u, "")
+    |> Emergencia.Util.sin_tildes()
   end
 
   defp normalizar(nil), do: ""
@@ -477,9 +477,9 @@ defmodule Emergencia.Necesidades do
   defp siguiente_id(necesidades) do
     mayor =
       Enum.reduce(necesidades, 0, fn necesidad, acumulado ->
-        case Regex.run(~r/^N(\d+)$/, necesidad.id) do
-          [_, numero] -> max(acumulado, String.to_integer(numero))
-          _ -> acumulado
+        case Emergencia.Util.numero_id(necesidad.id, "N") do
+          0 -> acumulado
+          numero -> max(acumulado, numero)
         end
       end)
 

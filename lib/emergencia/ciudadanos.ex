@@ -495,7 +495,7 @@ defmodule Emergencia.Ciudadanos do
     |> String.trim()
     |> String.downcase()
     |> :unicode.characters_to_nfd_binary()
-    |> String.replace(~r/\p{Mn}/u, "")
+    |> Emergencia.Util.sin_tildes()
   end
 
   defp normalizar(nil), do: ""
@@ -505,9 +505,9 @@ defmodule Emergencia.Ciudadanos do
   defp siguiente_id(elementos, prefijo) do
     mayor =
       Enum.reduce(elementos, 0, fn elemento, acumulado ->
-        case Regex.run(~r/^#{prefijo}(\d+)$/, elemento.id) do
-          [_, numero] -> max(acumulado, String.to_integer(numero))
-          _ -> acumulado
+        case Emergencia.Util.numero_id(elemento.id, prefijo) do
+          0 -> acumulado
+          numero -> max(acumulado, numero)
         end
       end)
 

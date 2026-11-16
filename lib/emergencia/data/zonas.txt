@@ -1,0 +1,1 @@
+%{"codigo" => "Z2", "nivel_afectacion" => "medio", "nombre" => "Zona Prueba", "sectores" => [%{"codigo" => "S9", "nombre" => "Sector Prueba", "puntos_atencion" => [%{"codigo" => "P9", "descripcion" => "Frente al parque", "nombre" => "Punto Prueba"}]}], "total_afectados" => 50}

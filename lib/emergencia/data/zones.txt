@@ -1,1 +1,3 @@
-Z|Z1|Centro|alto|120|S1,Sector Norte,crítico,Punto 1
+Z|Z1|Centro|alto|120|S1~Sector Norte^P1~Punto 1~Frente al parque
+Z|Z2|Norte|medio|80
+Z|Z3|Sur|critico|200

@@ -520,7 +520,7 @@ defmodule Emergencia.Recursos do
     |> String.trim()
     |> String.downcase()
     |> :unicode.characters_to_nfd_binary()
-    |> String.replace(~r/\p{Mn}/u, "")
+    |> Emergencia.Util.sin_tildes()
   end
 
   defp normalizar(nil), do: ""

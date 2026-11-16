@@ -65,10 +65,33 @@ defmodule Emergencia.Persistencia do
     end
   end
 
-  @doc "Carga los usuarios desde el archivo de texto."
+  @doc """
+  Carga los usuarios desde el archivo de texto.
+
+  Si el archivo canónico (`usuarios.txt`) todavía está vacío, usa la semilla
+  `users.txt` en formato de barras (`U|usuario|contraseña|rol|zona|nombre`).
+  """
   @spec cargar_usuarios() :: {:ok, usuarios()} | {:error, error_carga()}
   def cargar_usuarios do
-    cargar(ruta_usuarios(), &deserializar_usuario/1, & &1.nombre_usuario)
+    with {:ok, usuarios} <- cargar(ruta_usuarios(), &deserializar_usuario/1, & &1.nombre_usuario) do
+      if map_size(usuarios) == 0 do
+        cargar_usuarios_semilla()
+      else
+        {:ok, usuarios}
+      end
+    end
+  end
+
+  # Semilla de usuarios en formato de barras. Solo se usa mientras el archivo
+  # canónico no tenga registros.
+  defp cargar_usuarios_semilla do
+    ruta = Path.join(directorio(), "users.txt")
+
+    if File.exists?(ruta) do
+      cargar(ruta, &deserializar_usuario/1, & &1.nombre_usuario)
+    else
+      {:ok, %{}}
+    end
   end
 
   def serializar_usuario(%Usuario{} = u) do
@@ -83,8 +106,12 @@ defmodule Emergencia.Persistencia do
   end
 
   def deserializar_usuario(linea) when is_binary(linea) do
-    with {:ok, literal} <- parsear_literal(linea) do
-      usuario_desde_literal(literal)
+    if String.contains?(linea, "|") do
+      usuario_desde_pipe(linea)
+    else
+      with {:ok, literal} <- parsear_literal(linea) do
+        usuario_desde_literal(literal)
+      end
     end
   end
 
@@ -126,8 +153,12 @@ defmodule Emergencia.Persistencia do
   end
 
   def deserializar_zona(linea) when is_binary(linea) do
-    with {:ok, literal} <- parsear_literal(linea) do
-      zona_desde_literal(literal)
+    if String.contains?(linea, "|") do
+      zona_desde_pipe(linea)
+    else
+      with {:ok, literal} <- parsear_literal(linea) do
+        zona_desde_literal(literal)
+      end
     end
   end
 
@@ -217,6 +248,138 @@ defmodule Emergencia.Persistencia do
   defp acumular({:error, razon}, n, _clave_fun, acc, errores),
     do: {acc, [{n, razon} | errores]}
 
+  # ---------- Parsers del formato de barras ----------
+  #
+  # Los archivos semilla usan una línea por registro:
+  #   usuarios: U|usuario|contraseña|rol|zona|nombre_completo
+  #   zonas:    Z|codigo|nombre|nivel|total_afectados[|sectores]
+  #
+  # Los sectores se separan con ";" y el encabezado del sector con "~".
+  # Los puntos van después de "^" y se separan entre sí con "^":
+  #   S1~Sector Norte^P1~Punto 1~Frente al parque
+  # Cada sector es "codigo~nombre" y cada punto "codigo~nombre~descripcion".
+
+  defp usuario_desde_pipe(linea) do
+    case separar_pipe(linea, "U") do
+      [usuario, password, rol, zona, nombre_completo] ->
+        crear_usuario_pipe(usuario, password, nombre_completo, rol, zona)
+
+      [usuario, password, rol, zona] ->
+        crear_usuario_pipe(usuario, password, usuario, rol, zona)
+
+      _ ->
+        {:error, :estructura_invalida}
+    end
+  end
+
+  defp crear_usuario_pipe(usuario, password, nombre_completo, rol, zona) do
+    with {:ok, usuario} <- Catalogos.validar_texto(usuario, :nombre_usuario),
+         {:ok, nombre_completo} <- Catalogos.validar_texto(nombre_completo, :nombre_completo),
+         {:ok, rol} <- Catalogos.parse_rol(rol),
+         {:ok, zona} <- Catalogos.validar_texto(zona, :zona_principal),
+         {:ok, password} <- preparar_password(password) do
+      {:ok,
+       %Usuario{
+         nombre_usuario: usuario,
+         password: password,
+         nombre_completo: nombre_completo,
+         rol: rol,
+         zona_principal: zona
+       }}
+    end
+  end
+
+  # La semilla puede traer la contraseña en claro (se hashea) o ya hasheada.
+  defp preparar_password(password) do
+    cond do
+      Emergencia.Util.hex_valido?(password) ->
+        {:ok, password}
+
+      password == "" ->
+        {:error, {:campo_invalido, :password}}
+
+      true ->
+        {:ok, :crypto.hash(:sha256, password) |> Base.encode16(case: :lower)}
+    end
+  end
+
+  defp zona_desde_pipe(linea) do
+    case separar_pipe(linea, "Z") do
+      [codigo, nombre, nivel, total] ->
+        with {:ok, total} <- entero_no_negativo(total) do
+          Zona.new(codigo, nombre, nivel, total)
+        end
+
+      [codigo, nombre, nivel, total, sectores] ->
+        with {:ok, total} <- entero_no_negativo(total),
+             {:ok, sectores} <- sectores_desde_pipe(sectores) do
+          Zona.new(codigo, nombre, nivel, total, sectores)
+        end
+
+      _ ->
+        {:error, :estructura_invalida}
+    end
+  end
+
+  defp separar_pipe(linea, prefijo) do
+    campos =
+      linea
+      |> String.split("|")
+      |> Enum.map(&String.trim/1)
+
+    case campos do
+      [^prefijo | resto] -> resto
+      otros -> otros
+    end
+  end
+
+  defp entero_no_negativo(texto) do
+    case Integer.parse(String.trim(texto)) do
+      {numero, ""} when numero >= 0 -> {:ok, numero}
+      _ -> {:error, {:campo_invalido, :total_afectados}}
+    end
+  end
+
+  defp sectores_desde_pipe(""), do: {:ok, []}
+
+  defp sectores_desde_pipe(texto) do
+    texto
+    |> String.split(";", trim: true)
+    |> mapear(&sector_desde_pipe/1)
+  end
+
+  defp sector_desde_pipe(texto) do
+    {cabecera, puntos} =
+      case String.split(texto, "^", parts: 2) do
+        [cabecera] -> {cabecera, ""}
+        [cabecera, puntos] -> {cabecera, puntos}
+      end
+
+    with [codigo, nombre] <- String.split(cabecera, "~", parts: 2),
+         {:ok, puntos} <- puntos_desde_pipe(puntos) do
+      Sector.new(codigo, nombre, puntos)
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :estructura_invalida}
+    end
+  end
+
+  defp puntos_desde_pipe(""), do: {:ok, []}
+
+  defp puntos_desde_pipe(texto) do
+    texto
+    |> String.split("^", trim: true)
+    |> mapear(&punto_desde_pipe/1)
+  end
+
+  defp punto_desde_pipe(texto) do
+    case String.split(texto, "~", parts: 3) do
+      [codigo, nombre] -> PuntoAtencion.new(codigo, nombre, "")
+      [codigo, nombre, descripcion] -> PuntoAtencion.new(codigo, nombre, descripcion)
+      _ -> {:error, :estructura_invalida}
+    end
+  end
+
   defp parsear_literal(linea) do
     case Code.string_to_quoted(linea, existing_atoms_only: true) do
       {:ok, ast} -> literal(ast)
@@ -268,7 +431,7 @@ defmodule Emergencia.Persistencia do
   defp usuario_desde_literal(_otro), do: {:error, :estructura_invalida}
 
   defp validar_hash(valor) when is_binary(valor) do
-    if Regex.match?(~r/\A[0-9a-f]{64}\z/, valor),
+    if Emergencia.Util.hex_valido?(valor),
       do: {:ok, valor},
       else: {:error, {:campo_invalido, :password}}
   end
